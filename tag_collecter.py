@@ -1,6 +1,4 @@
 import argparse
-import time
-import pandas as pd
 import instapi
 
 # parse command line arguments
@@ -13,6 +11,14 @@ parser.add_argument('-k','--apikey', required=True,
 	help='Instagram API key / client ID')
 args = parser.parse_args()
 
+def data_processing(posts):
+	output = []
+	for post in posts:
+	    timestamp = post['created_time']
+	    likes = post['likes']['count']
+	    output.append([timestamp, likes])
+	return output
+
 # DOWNLOAD N POSTS WITH SPECIFIC TAG
 api = instapi.InstAPI(args.apikey)
 
@@ -20,4 +26,4 @@ tag = args.tag
 n = args.number
 filename = '%s_%s_posts.csv' % (tag, n)
 
-posts = api.endpoint_tag(tag, n, outfile=filename)
+posts = api.endpoint_tag(tag, n, outfile=filename, func=data_processing)

@@ -11,7 +11,6 @@ parser.add_argument('-i','--infile', required=True,
 args = parser.parse_args()
 
 matplotlib.style.use('ggplot')
-api = instapi.InstAPI('098d66091c6f449ab8e5649403ced1d8')
 
 infile_splitted = args.infile.split('_')
 tag = infile_splitted[0]
@@ -21,17 +20,22 @@ data.columns = ['url', 'timestamp','likes']
 data = data.drop('url', axis=1)
 n = data.likes.count()
 
-data['hour'] = data.timestamp.apply(lambda x: api.timestamp2date(x).hour)
+data['hour'] = data.timestamp.apply(lambda x: instapi.timestamp2date(x).hour)
 likes_by_hour = data.groupby(data.hour).likes.sum()
 
-newest_post_date = api.timestamp2date(data.head(1).timestamp)
-oldest_post_date = api.timestamp2date(data.tail(1).timestamp)
+newest_post_date = instapi.timestamp2date(data.head(1).timestamp)
+oldest_post_date = instapi.timestamp2date(data.tail(1).timestamp)
 
 # number of pictures per hour
 posts_per_hour = data.groupby(data.hour).likes.count()
 
 # average number of likes by hour
 avg_likes_by_hour = likes_by_hour / posts_per_hour
+
+stats = pd.DataFrame()
+stats['median'] = data.groupby(data.hour).likes.median()
+stats['avg'] = data.groupby(data.hour).likes.mean()
+stats['max'] = data.groupby(data.hour).likes.max()
 
 ###
 # PLOT DATA
@@ -59,3 +63,27 @@ avg_likes_by_hour.plot(kind='bar', ax=ax3)
 ax3.set_ylabel('Average number of likes')
 ax3.set_xlabel('')
 ax3.set_title("Average number of likes by hour")
+
+# second figure with stats
+fig2, (ax4, ax5, ax6) = plt.subplots(3, 1, figsize=(21,9))
+fig2.subplots_adjust(top=0.9)
+fig2.suptitle(supt, fontsize=14, fontweight='bold')
+
+stats['median'].plot(ax=ax4)
+ax4.set_ylabel('Median number of likes')
+ax4.set_xlabel('')
+ax4.set_xticks(range(0,24))
+ax4.set_xticklabels([])
+
+stats['avg'].plot(ax=ax5)
+ax5.set_ylabel('Average number of likes')
+ax5.set_xlabel('')
+ax5.set_xticks(range(0,24))
+ax5.set_xticklabels([])
+
+stats['max'].plot(ax=ax6)
+ax6.set_ylabel('Max number of likes')
+ax6.set_xlabel('Hour posted (UTC/GMT +2h')
+ax6.set_xticks(range(0,24))
+
+plt.show()
