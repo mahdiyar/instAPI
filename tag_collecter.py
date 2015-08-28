@@ -1,14 +1,16 @@
 import argparse
-import instapi
+from instapi import InstAPI
 
 # parse command line arguments
-parser = argparse.ArgumentParser(description='Request n posts from Instagram API with specified hashtag. Saved them to a file called {hashtag}_{n}_{timestamp}.csv.')
+parser = argparse.ArgumentParser(description='Request n posts from Instagram API with specified hashtag.')
 parser.add_argument('-n','--number', required=True,
 	help='number of posts to request')
 parser.add_argument('-t','--tag', required=True,
 	help='hashtag to search for')
-parser.add_argument('-k','--apikey', required=True,
-	help='Instagram API key / client ID')
+parser.add_argument('-k','--keyfile', required=True,
+	help='CSV file with Instagram API keys / client IDs')
+parser.add_argument('-o','--outfile', required=False,
+	help='CSV file to save data to.')
 args = parser.parse_args()
 
 def data_processing(posts):
@@ -20,10 +22,10 @@ def data_processing(posts):
 	return output
 
 # DOWNLOAD N POSTS WITH SPECIFIC TAG
-api = instapi.InstAPI(args.apikey)
+api = InstAPI.load_clientids(args.keyfile)
 
 tag = args.tag
 n = args.number
-filename = '%s_%s_posts.csv' % (tag, n)
+filename = args.outfile
 
 posts = api.endpoint_tag(tag, n, outfile=filename, func=data_processing)

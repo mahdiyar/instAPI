@@ -9,7 +9,6 @@ import json
 import datetime
 import time
 import os
-# from numpy import NaN
 import pandas as pd
 from sys import maxint
 
@@ -21,90 +20,28 @@ class BadClientID(Exception):
         return repr(self.value)
 
 class InstAPI:
-    def __init__(self, clientid):
+    def __init__(self, clientids):
         # evaluate if provided clientid is valid
-        if not clientid:
-            raise BadClientID('No API key provided.')
-        if len(clientid) != 32:
-            raise BadClientID('The provided API key is too long/short.')
+        if not clientids:
+            raise BadClientID('No API key(s) provided.')
+        if type(clientids) is not list:
+            clientids = [clientids]
+        for clientid in clientids:
+            if len(clientid) != 32:
+                raise BadClientID('Invalid length for key: %s' % clientid)
 
-        self.clientid = clientid
+        self.clientids = clientids
 
-    # def endpoint_media(self, params, n=NaN, per_request=40, verbose=None):
-    #     # initialize variables
-    #     posts = []
-    #     post_count, verbose_count, number_of_requests = (0, 1.0, 0)
-    #     start_time = time.time()
-    #     endpoint = '/media/search'
-    #     n = int(n)
+    @classmethod
+    def load_clientids(cls, filename):
+        """Initialize class with clientids that are stored in csv file.
+        """
+        with open(filename, 'r') as f:
+            content = f.read()
+        ids = [x.strip() for x in content.split(',')]
+        return cls(ids)
 
-    #     if 'min_timestamp' in params:
-    #         min_timestamp = int(params['min_timestamp'])
-    #         params.pop('min_timestamp')
-    #         # reset the number of posts to NaN
-    #         n = NaN
-    #     else:
-    #         min_timestamp = NaN
-
-    #     if 'max_timestamp' in params:
-    #         maxage = int(params['max_timestamp'])
-    #         params.pop('max_timestamp')
-    #     else:
-    #         # current date
-    #         maxage = int(time.time())
-
-    #     # set up an url with parameters passed
-    #     extra_params = {'client_id':self.clientid, 'count':per_request}
-    #     params = dict(params, **extra_params)
-    #     base_url = 'https://api.instagram.com/v1' + endpoint + '?' + \
-    #         urllib.urlencode(params)
-
-    #     # while not enough posts have been gathered
-    #     while (post_count < n) or (min_timestamp < maxage):
-    #         # the next URL to request
-    #         next_url = self._next_url_from_timestamp(base_url, maxage)
-
-    #         # print log info
-    #         if verbose is True:
-    #             print 'got {0}/{1} posts, now using URL: .../{2}'.format(
-    #                 len(posts), n, next_url.split('/')[-1])
-
-    #         # request next set of posts and get maxage of the oldest post
-    #         current_request = self._do_request(next_url)
-    #         maxage = int(current_request['data'][-1]['created_time'])
-
-    #         # add posts to list that will be returned
-    #         posts_in_call = len(current_request['data'])
-    #         posts_needed = n - post_count
-    #         if (posts_needed - posts_in_call) < 0:
-    #             # there are more posts in this call than there are still needed
-    #             posts.extend(current_request['data'][:posts_needed])
-    #         elif maxage < min_timestamp:
-    #             # only add posts till min_timestamp is reached
-    #             for post in current_request['data']:
-    #                 maxage = int(post['created_time'])
-    #                 if min_timestamp < maxage:
-    #                     posts.append(post)
-    #                 else:
-    #                     break
-    #         else:
-    #             # far more to go, use all posts in this request
-    #             posts.extend(current_request['data'])
-
-    #         post_count += posts_in_call
-    #         number_of_requests += 1
-
-    #     # print some final info
-    #     print "\nDONE REQUESTING %s POSTS FROM API IN %s REQUESTS\n" % \
-    #         (len(posts), number_of_requests)
-    #     print "That means about %.2f posts per request" % \
-    #         (float(len(posts)) / number_of_requests)
-    #     print "API calls took %.2fs" % (time.time() - start_time)
-
-    #     return posts
-
-    def endpoint_tag(self, tag, n, func=None, params={}, verbose=True, outfile=None,
-            per_request=40):
+    def endpoint_tag(self, tag, n, func=None, params={}, outfile=None):
         """API wrapper for /tags/{hashtag}/media/recent endpoint. If outfile is
         specified the output will be saved as CSV; otherwise a list will be
         returned.
@@ -112,35 +49,35 @@ class InstAPI:
         tag (str): hashtag to look up
         n (int): number of posts to retrieve
         func (function): function name to which the list of posts will be passed
-            before it is returned or saved to outfile. Use this function to filter
-            out the data from the request. See `extract_url_timestamp_likes` for an
-            example function.
+            before it is returned or saved to outfile. Use this function to
+            filter out the data from the request. See
+            `extract_url_timestamp_likes` for an example function.
         params (dict): extra parameters to pass to the URL
-        verbose (bool): prints output to stdout if True
         outfile (str): name of file the output should be saved to
-        per_request (int): number of posts to retrieve per request. Usually
-            capped at around 33 by the API
         """
         posts = []
-        post_count, number_of_requests = (0, 0)
-        start_time = time.time()
+        post_count, number_of_requests, per_request = (0, 0, 40)
+        start_time, elapsed_time = (time.time(), 0)
         endpoint = '/tags/%s/media/recent' % tag
         n = int(n)
 
-        # create file named same as outfile but with .log extension
-        if outfile:
-            url_log = ".".join(outfile.split('.')[:-1]) + '_url.log'
-            logfile = ".".join(outfile.split('.')[:-1]) + '.log'
-            # check if file already exists and get values for post_count and
-            # number_of_requests for this continued run
-            if os.path.isfile(logfile):
-                f = open(logfile, 'r')
-                log_post_count = f.readline()
-                log_number_of_requests = f.readline()
-                post_count = int(log_post_count.split(':')[-1])
-                number_of_requests = int(log_number_of_requests. \
-                    split(':')[-1])
-                f.close()
+        if not outfile:
+            outfile = "{}_{}_{}.csv".format(start_time, tag, n)
+
+        # create files named same as outfile with (_url).log extension
+        url_log = ".".join(outfile.split('.')[:-1]) + '_url.log'
+        logfile = ".".join(outfile.split('.')[:-1]) + '.log'
+
+        # check if file already exists and get values for post_count,
+        # number_of_requests and the elapsed time for this continued run
+        if os.path.isfile(logfile):
+            post_count, number_of_requests, elapsed_time = self._parse_logfile(logfile)
+            #print "CONTINUING RUN FROM {} POSTS\n".format(post_count)
+
+        if post_count >= n:
+            print "Already downloaded and saved {} posts to {}".format(
+                post_count, outfile)
+            return
 
         # either construct a URL or get it from the log
         if os.path.isfile(url_log):
@@ -148,70 +85,85 @@ class InstAPI:
             next_url = _tail(url_log)
         else:
             # set up an url with parameters passed
-            extra_params = {'client_id':self.clientid, 'count':per_request}
+            extra_params = {'client_id':self.clientids[0], 'count':per_request}
             params = dict(params, **extra_params)
             next_url = 'https://api.instagram.com/v1' + endpoint + '?' + \
                 urllib.urlencode(params)
 
         # while not enough posts have been gathered
         while (post_count < n):
-            # print info to stdout
-            if verbose is True:
-                print 'got {0}/{1} posts, now using URL: .../{2}'.format(
-                    post_count, n, next_url.split('/')[-1])
+            # print some information every x requests
+            if number_of_requests % 10 == 0 or number_of_requests == 0:
+                print '#{}: got {}/{} posts, now using URL: .../{}'.format(
+                    number_of_requests, post_count, n, next_url.split('/')[-1])
 
-            # request next posts, if it fails break loop
+            # request next posts, if it fails use next clientid or break loop
             current_request = self._do_request(next_url)
-            if not current_request:
-                print "API LIMIT REACHED."
+            if (not current_request and len(self.clientids) > 1):
+                nextid = self.clientids.pop(0)
+                self.clientids.append(nextid)
+                print "\n\nAPI LIMIT REACHED. USING NEXT CLIENTID: %s\n\n" % \
+                    nextid
+                # replace client_id in next_url and skip current iteration
+                pos = next_url.find('client_id=')
+                pos += len('client_id=')
+                oldid = next_url[pos:pos+32]
+                next_url = next_url.replace(oldid, nextid)
+                continue
+            elif not current_request:
+                print "\nAPI LIMIT REACHED. ONLY ONE CLIENTID PROVIDED.\n"
                 break
 
+            # if a data processing function is passed, pass the requested data
+            # to it otherwise use all of the requested data retured by the API
             if func:
                 data = func(current_request['data'])
             else:
                 data = current_request['data']
 
             next_url = current_request['pagination']['next_url']
-            if url_log:
-                # append next_url to url logfile
-                with open(url_log, 'a') as f:
-                    f.write(next_url+'\n')
+            number_of_requests += 1
+            # append next_url to url logfile
+            with open(url_log, 'a') as f:
+                f.write(next_url+'\n')
 
-            # add posts to list that will be returned, but only when no outfile
-            # is specified. Otherwise append posts to outfile
+            # append posts to outfile
             posts_in_call = len(current_request['data'])
             posts_needed = n - post_count
-            if not outfile:
-                if (posts_needed - posts_in_call) < 0:
-                    # there are more posts in this call than there are needed
-                    posts.extend(data[:posts_needed])
-                else:
-                    # far more to go, use all posts in this request
-                    posts.extend(data)
-
-            if outfile:
+            if (posts_needed - posts_in_call) < 0:
+                # there are more posts in this call then there are needed
+                df = pd.DataFrame(data[:posts_needed])
+                post_count += posts_needed
+            else:
+                # far more to go
                 df = pd.DataFrame(data)
-                with open(outfile, 'a') as f:
-                    df.to_csv(f, index=False, header=False)
+                post_count += posts_in_call
 
-            post_count += posts_in_call
-            number_of_requests += 1
+            with open(outfile, 'a') as f:
+                df.to_csv(f, index=False, header=False)
 
             # update numbers in logfile
-            if logfile:
-                with open(logfile, 'w') as f:
-                    f.write("post count: {}\nnumber of requests: {}".format(
-                        post_count, number_of_requests))
+            with open(logfile, 'w') as f:
+                total_time = elapsed_time + (time.time() - start_time)
+                f.write("post count: {}\nnumber of requests: {}\ntime (s): {}\n" \
+                    .format(post_count, number_of_requests, total_time))
 
         # print some final info
+        posts_per_request = float(post_count) / number_of_requests
+        time_needed = time.time() - start_time
+        oldest_timestamp = current_request['data'][-1]['created_time']
+        oldest_post = timestamp2date(oldest_timestamp)
+
         print "\nDONE REQUESTING %s POSTS FROM API IN %s REQUESTS\n" % \
             (post_count, number_of_requests)
-        print "That means about %.2f posts per request" % \
-            (float(post_count) / number_of_requests)
-        print "API calls took %.2fs" % (time.time() - start_time)
+        print "That means about %.2f posts per request" % posts_per_request
+        print "API calls took %.2fs" % time_needed
+        print "Total time for all runs %.2fs" % total_time
+        print "Oldest post is from %s" % oldest_post
 
-        if not outfile:
-            return posts
+        # log final information
+        with open(logfile, 'a') as f:
+            f.write("Oldest post: %s\n" % oldest_post)
 
     def get_coordinates(self, location):
         """Looks up lat and lng values from Google Maps API for the given
@@ -227,6 +179,17 @@ class InstAPI:
         lat = js['results'][0]['geometry']['location']['lat']
         lng = js['results'][0]['geometry']['location']['lng']
         return lat, lng
+
+    def _parse_logfile(self, logfile):
+        """Parses post count and number of requests stored in logfile and
+        returns them as (post_count, number_of_requests) tuple.
+        """
+        f = open(logfile, 'r')
+        post_count = int(f.readline().split(':')[-1])
+        number_of_requests = int(f.readline().split(':')[-1])
+        elapsed_time = float(f.readline().split(':')[-1])
+        f.close()
+        return (post_count, number_of_requests, elapsed_time)
 
     def _do_request(self, url):
         """Sends HTTP request to URL and returns dict if the request was
@@ -255,9 +218,15 @@ def extract_url_timestamp_likes(posts):
         output.append([image, timestamp, likes])
     return output
 
-def timestamp2date(timestamp):
+def timestamp2datetime(timestamp):
     """Returns datetime.datetime object of the machine's local time"""
     return datetime.datetime.fromtimestamp(int(timestamp))
+
+def timestamp2date(timestamp, format="%d.%m.%Y %H:%M"):
+    """Returns date in given format, standard is '%d.%m.%Y %H:%M'"""
+    dt = datetime.datetime.fromtimestamp(int(timestamp))
+    rtn = dt.strftime(format)
+    return rtn
 
 def date2timestamp(date_):
     """Returns timestamp as int. Takes date in dd.mm.yyyy format"""
@@ -268,7 +237,4 @@ def _tail(f):
     stdin,stdout = os.popen2("tail -n 1 {}".format(f))
     stdin.close()
     lines = stdout.readlines(); stdout.close()
-    return str(lines[-1])
-
-if __name__ == "__main__":
-    pass
+    return str(lines[-1]).strip()
